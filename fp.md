@@ -122,8 +122,7 @@ const everyOtherLetter = (myString: string): string =>
 
 // Annoying
 const output = everyOtherLetter(
-  toUpperCase(stringify("Is a monad a burrito? We may never know."))
-);
+  toUpperCase("Is a monad a burrito? We may never know."));
 
 // => "I  OA  URT?W A EE NW"
 ```
@@ -168,12 +167,13 @@ export function pipe(
 # Pipe, continued
 
 ```ts
+// A little annoying
 const everyOtherLetter = (myString: string) =>
   pipe(myString, arrayFromString, evenArrayElements, stringFromArray);
 
 // A little annoying
 const capitalizedEveryOtherLetter = (input: toStringable) =>
-  pipe(input, stringify, toUpperCase, everyOtherLetter);
+  pipe(stringify, toUpperCase, everyOtherLetter);
 ```
 
 ---
