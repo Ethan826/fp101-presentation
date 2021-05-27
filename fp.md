@@ -557,7 +557,7 @@ ID isn't found. Note at this point we're switching to the real `fp-ts` library.
 
 ```ts
 // "Server"
-const databaseLookup = (id: number): 404 | Record<string | string> = ({
+const databaseLookup = (id: number): 404 | Record<string, string> = ({
   1: {name: "Peter Sagan", status: "Fading"},
   2: {name: "Tadej Pogačar", status: "Rising"},
   4: {nome: "Lance Armstrong", status: "Shameless"},
