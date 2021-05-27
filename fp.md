@@ -7,7 +7,7 @@ size: 16:9
 
 ## Ethan Kent
 
-### 2021-05-29
+### 2021-05-28
 
 ---
 
@@ -284,8 +284,9 @@ type TheUglyWorld<A, F> = Success<A> | Failure<F>; //                      |
 
 # Purity in an impure world (continued)
 
-We want `myPristineFunction` to wear protective gear and get "lifted" into that
-nasty fallible world without having to get infected by it. How?
+We want `myPristineFunction` to be delivered to the correct spot where it can do
+its job, never having to think of how or why it got there. It will be "lifted"
+into the nasty fallible world without having to get infected by it. How?
 
 ---
 
@@ -301,12 +302,12 @@ Also note the `readonly`s: functional programming likes immutability.
 
 ```ts
 interface Left<E> {
-  readonly _tag: 'Left';
+  readonly _tag: "Left";
   readonly left: E;
 }
 
 interface Right<A> {
-  readonly _tag: 'Right';
+  readonly _tag: "Right";
   readonly right: A;
 }
 
@@ -424,11 +425,11 @@ const addThreeNumbers = (
   third: number
 ): number => first + second + third;
 
-const curriedAddThreeNumber =
+const curriedAddThreeNumbers =
   (first: number) => (second: number) => (third: number): number =>
     first + second + third;
 
-console.log(curriedAddThreeNumber(7)(10)(22)); // => 39
+console.log(curriedAddThreeNumbers(7)(10)(22)); // => 39
 ```
 
 ---
@@ -438,7 +439,7 @@ console.log(curriedAddThreeNumber(7)(10)(22)); // => 39
 A curried function returns a "partially applied" function.
 
 ```ts
-const addTwoNumbersToSeven = curriedAddThreeNumber(7);
+const addTwoNumbersToSeven = curriedAddThreeNumbers(7);
 const addTo44 = addTwoNumbersToSeven(37);
 
 console.log(addTo44(18)); // => 62
@@ -549,15 +550,153 @@ const map = <A, B>(func: (param: A) => B) => (input: Option<A>): Option<B> =>
 
 ---
 
-# `Either` and `Option` interoperability
+# An example with `Either` and `Option`
+
+Imagine we make a database request that could error, and it's also possible the
+ID isn't found. Note at this point we're switching to the real `fp-ts` library.
 
 ```ts
+// "Server"
+const databaseLookup = (id: number): 404 | Record<string | string> = ({
+  1: {name: "Peter Sagan", status: "Fading"},
+  2: {name: "Tadej Pogačar", status: "Rising"},
+  4: {nome: "Lance Armstrong", status: "Shameless"},
+  7: {name: "Marianne Vos", status: "GOAT"},
+}[id] || 404);
+
+const networkEndpoint = (
+  id: number
+): 404 | Record<string, string> | undefined =>
+  Math.random() < 0.67 ? databaseLookup(id) : undefined;
 ```
 
 ---
 
-# WHY ARE WE DOING THIS?
+```ts
+// Client-side networking
+interface RiderData {
+  name: string;
+  status: string;
+}
 
-1. It lets us define our application in terms of pure functions, then explicitly
-   control how they touch the outside world.
-2. It makes us deal with every part of the happy path and sad path.
+type RequestResult = E.Either<string, O.Option<RiderData>>;
+
+const requestData: (id: number) => RequestResult = flow(
+  networkEndpoint,
+  E.fromNullable("Gremlins stuck in the machine"),
+  E.map(O.fromPredicate((data) => data !== 404))
+) as (id: number) => RequestResult;
+```
+
+---
+
+```ts
+// Client-side rendering
+const handle200 = (data: RiderData) => {
+  console.log(`Found ${data.name}, status: ${data.status}`);
+};
+
+const handle404 = () => {
+  console.log("Result not found");
+};
+
+const handle500 = (error: string) => {
+  console.error(`Server error: ${error}`);
+};
+
+// WOW LOOK AT THIS SNAZZY CODE!
+const render: (data: RequestResult) => void =
+  E.match(handle500, O.match(handle404, handle200));
+
+pipe(4, requestData, render);
+```
+
+---
+
+# Uh-oh...
+
+```bash
+$> ts-node server.ts
+Found undefined, status: Shameless
+```
+
+---
+
+# We didn't validate
+
+```ts
+import * as t from "io-ts";
+
+const RiderData = t.type({ name: t.string, status: t.string });
+type RiderData = t.TypeOf<typeof RiderData>;
+
+type RequestResult = E.Either<string | t.Errors, O.Option<RiderData>>;
+
+const requestData: (id: number) => RequestResult =
+  flow(
+    networkEndpoint,
+    E.fromNullable("Gremlins stuck in the machine"),
+    E.chainW((response) =>
+      response === 404
+        ? E.of(O.none)
+        : pipe(response, RiderData.decode, E.map(O.of))
+    )
+  );
+
+const handle500 = (error: unknown) => {
+  console.error(`Server error: ${JSON.stringify(error, null, 2)}`);
+};
+```
+
+---
+
+# Something something category theory?
+
+The stuff we've already looked at has this category theory stuff in it. Roughly
+speaking:
+
+- Things that let you do that `map` bit are functors.
+- Things that let you `fold` or `match` are semigroups.
+  - Things that let you `fold` or `match` without having to pass in a starting
+    value are monoids.
+
+---
+
+# Umm, what about monads?
+
+Remember where we mapped a validation function (that takes a value and returns
+an `Either`) and kind of `map`ed it onto that possible server error...
+
+But that server error was already an `Either`...
+
+And so we could have wound up with `Either<Either< ... >>`?
+
+But because we used `chain` instead of `map`, it "smashed" the two `Either`s
+together? (Some languages call that `flatMap`, by the way.)
+
+---
+
+# Yes I remember that. What are monads?
+
+A monad is a thing like `Either` or `Option` that lets you:
+
+- Do that flat map thing: lift a function up and smash the nested output.
+- Stick a value into the `Either` or `Option` in the first place, i.e.
+  `E.right(42)` for example.
+- Plus follow some rules about how it's implemented.
+
+---
+
+# Whoa, why those things?
+
+So you can "lift" something up into a context like fallibility (with `Either`),
+nullability (with `Option`), async (with `Task`), side effects (with `IO`),
+fallible async (with `TaskEither`), dependency injection (with `Reader`),
+fallible async with dependency injection (with `ReaderTaskEither`), etc...
+
+And then keep plugging in functions that don't know about that context...
+
+And have the computations continue on the happy path but sensible error handling
+on the sad path...
+
+And make all of that be enforced by the language and type system...
